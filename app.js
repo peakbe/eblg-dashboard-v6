@@ -207,6 +207,8 @@ function computeImpacted(heading) {
 async function refresh() {
 
   /* METAR */
+// const metar = await fetchMetar();
+// updateMetarUI(metar);
   try {
     const metar = await fetchMetar();
     updateMetarUI(metar);
