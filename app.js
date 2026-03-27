@@ -224,20 +224,85 @@ function updateMetarUI(m) {
 }
 
 /* ----------------------------------------------------------
-   FIDS
+   HELPERS FIDS
 ---------------------------------------------------------- */
-async function fetchFIDS() {
-  const [arr, dep] = await Promise.all([
-    fetch(FIDS_ARR).then(r => r.json()),
-    fetch(FIDS_DEP).then(r => r.json())
-  ]);
 
-  return {
-    arrivals: Array.isArray(arr) ? arr : [],
-    departures: Array.isArray(dep) ? dep : []
-  };
+// Heure locale
+function formatLocal(t) {
+  if (!t) return "-";
+  return new Date(t).toLocaleTimeString("fr-BE", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Europe/Brussels"
+  });
 }
 
+// "dans X minutes"
+function minutesFromNow(time) {
+  if (!time) return "-";
+  const now = new Date();
+  const t = new Date(time);
+  const diffMin = Math.round((t - now) / 60000);
+
+  if (diffMin < -5) return `il y a ${Math.abs(diffMin)} min`;
+  if (diffMin < 1) return "maintenant";
+  return `dans ${diffMin} min`;
+}
+
+// Détection retard
+function isDelayed(v) {
+  const sched = v.sTx || v.scheduled;
+  const est = v.eTx;
+  const act = v.aTx;
+
+  if (!sched) return false;
+
+  const s = new Date(sched);
+  if (act && new Date(act) > s) return true;
+  if (est && new Date(est) > s) return true;
+
+  return false;
+}
+
+// Couleur cargo vs pax
+function flightColor(v) {
+  if (v.flightPax && v.flightPax.startsWith("C")) return "#0ea5e9"; // Cargo
+  return "#10b981"; // Pax
+}
+
+/* ----------------------------------------------------------
+   MINI TABLEAU : Prochains vols
+---------------------------------------------------------- */
+function renderNextFlights(arrivals, departures) {
+  const container = document.getElementById("next-flights");
+
+  let html = "<strong>Arrivées</strong><br>";
+  arrivals.forEach(f => {
+    html += `
+      <div class="flight-row">
+        <strong>${f.flightPax || f.flight}</strong> → ${formatLocal(f.eTx)}
+        <span style="color:#6b7280;">(${minutesFromNow(f.eTx)})</span>
+      </div>
+    `;
+  });
+
+  html += "<br><strong>Départs</strong><br>";
+  departures.forEach(f => {
+    html += `
+      <div class="flight-row">
+        <strong>${f.flightPax || f.flight}</strong> → ${formatLocal(f.eTx)}
+        <span style="color:#6b7280;">(${minutesFromNow(f.eTx)})</span>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+/* ----------------------------------------------------------
+   LISTE FIDS PRINCIPALE (compacte + RETARD + couleurs)
+---------------------------------------------------------- */
 function updateFlightsUI(f) {
   const el = document.getElementById("flights-list");
 
@@ -248,7 +313,7 @@ function updateFlightsUI(f) {
 
   let html = "";
 
-  // --- ARRIVÉES ---
+  // ARRIVÉES
   html += "<strong>Arrivées</strong><br>";
   f.arrivals.forEach(v => {
     const delayed = isDelayed(v);
@@ -256,7 +321,7 @@ function updateFlightsUI(f) {
 
     html += `
       <div class="flight-row" style="border-left:4px solid ${color}; padding-left:6px; margin-bottom:6px;">
-        <strong>${v.flightPax || v.flight}</strong> → ${formatLocal(v.eTx)} 
+        <strong>${v.flightPax || v.flight}</strong> → ${formatLocal(v.eTx)}
         <span style="color:#6b7280;">(${minutesFromNow(v.eTx)})</span>
         ${delayed ? `<span style="color:#b91c1c; font-weight:bold;"> RETARD</span>` : ""}
       </div>
@@ -265,7 +330,7 @@ function updateFlightsUI(f) {
 
   html += "<br>";
 
-  // --- DÉPARTS ---
+  // DÉPARTS
   html += "<strong>Départs</strong><br>";
   f.departures.forEach(v => {
     const delayed = isDelayed(v);
@@ -273,7 +338,7 @@ function updateFlightsUI(f) {
 
     html += `
       <div class="flight-row" style="border-left:4px solid ${color}; padding-left:6px; margin-bottom:6px;">
-        <strong>${v.flightPax || v.flight}</strong> → ${formatLocal(v.eTx)} 
+        <strong>${v.flightPax || v.flight}</strong> → ${formatLocal(v.eTx)}
         <span style="color:#6b7280;">(${minutesFromNow(v.eTx)})</span>
         ${delayed ? `<span style="color:#b91c1c; font-weight:bold;"> RETARD</span>` : ""}
       </div>
@@ -283,16 +348,14 @@ function updateFlightsUI(f) {
   el.innerHTML = html;
 }
 
-
-
-function format(t) {
-  if (!t) return "-";
-  return new Date(t).toLocaleTimeString("fr-BE", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "Europe/Brussels"
-  });
+/* ----------------------------------------------------------
+   LIMITATION À 10 VOLS
+---------------------------------------------------------- */
+function limitNextFlights(list) {
+  return list
+    .filter(f => f.scheduled)
+    .sort((a, b) => new Date(a.scheduled) - new Date(b.scheduled))
+    .slice(0, 10);
 }
 
 
@@ -360,7 +423,7 @@ function computeImpacted(runwayName, phase) {
 
 
 /* ----------------------------------------------------------
-   MAIN
+   MAIN - REFRESH()
 ---------------------------------------------------------- */
 async function refresh() {
 
